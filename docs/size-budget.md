@@ -1,6 +1,6 @@
 # Size budget
 
-The shipped APK is **129,744,222 bytes (123.7 MiB)**. Almost all of it is the
+The shipped APK is **129,726,339 bytes (123.7 MiB)**. Almost all of it is the
 official engine and the native runtime; the Java shell is about 50 KiB of dex.
 
 ## Where the bytes go
