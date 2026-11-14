@@ -38,15 +38,25 @@ export function applyAppBootFallback(payloadDir, log = console.log) {
   let skipped = 0
   for (const path of candidates) {
     const text = readFileSync(path, 'utf8')
+    const patchedLine = '\tlet addon; try { addon = createRequire(import.meta.url)("node-addon-require-builtin"); } catch { addon = { requireBuiltin: (id) => createRequire(import.meta.url)(id) }; }'
     const looksPatched = text.includes(MARKER)
       || (text.includes('catch { addon = { requireBuiltin:') && !text.includes(ORIGINAL))
-    if (looksPatched) { skipped++; continue }
-    if (!text.includes(ORIGINAL)) {
-      throw new Error(`app-boot internals fallback: pattern not found in ${path} — the dependency changed; review engine/payload-patch.mjs`)
+    if (text.includes(MARKER)) { skipped++; continue }
+    if (text.includes(ORIGINAL)) {
+      writeFileSync(path, text.replace(ORIGINAL, REPLACEMENT))
+      patched++
+      log(`patched ${path}`)
+      continue
     }
-    writeFileSync(path, text.replace(ORIGINAL, REPLACEMENT))
-    patched++
-    log(`patched ${path}`)
+    if (text.includes(patchedLine)) {
+      // Already patched by an older build that omitted the audit marker:
+      // add the marker comment without touching the executable code.
+      writeFileSync(path, text.replace(patchedLine, `\t// ${MARKER}\n${patchedLine}`))
+      patched++
+      log(`marked ${path}`)
+      continue
+    }
+    throw new Error(`app-boot internals fallback: pattern not found in ${path} — the dependency changed; review engine/payload-patch.mjs`)
   }
   log(`app-boot internals fallback: ${String(patched)} patched, ${String(skipped)} already up to date`)
   return { patched, skipped }

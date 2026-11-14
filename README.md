@@ -22,9 +22,9 @@ on any Linux host) without Gradle.
 | ABI | `arm64-v8a` |
 | Android | 7.0+ (minSdk 24), target/compile 36 |
 | APK | `dist/DSH-Android-0.1.0.apk` |
-| APK size | 129,830,240 bytes (123.8 MiB) |
-| APK SHA-256 | `29ed07e8feff7cf1978169dac1b037033fe5827789a42daee194957366667ae6` |
-| Engine payload | 88,864,081 bytes, sha256 `943c3eb8cf17adac9836c53272cee5e731ff3632a05b118abe5f8921aff30901` |
+| APK size | 129,744,222 bytes (123.7 MiB) |
+| APK SHA-256 | `576c3cc90445453b58d398306f38c0500a3446e5dfe0a9745abc7caff7f228d7` |
+| Engine payload | 88,777,991 bytes, sha256 `62d6760d9215e0203ac8bb2fd87bae788b0c487424c1a4ccdf2195b2584f0bc1` |
 
 The APK in `dist/` is signed with a local development key. Its certificate
 SHA-256 is

@@ -1,13 +1,13 @@
 # Size budget
 
-The shipped APK is **129,830,240 bytes (123.8 MiB)**. Almost all of it is the
+The shipped APK is **129,744,222 bytes (123.7 MiB)**. Almost all of it is the
 official engine and the native runtime; the Java shell is about 50 KiB of dex.
 
 ## Where the bytes go
 
 | Part | Raw | In APK | Notes |
 | --- | ---: | ---: | --- |
-| DSH engine payload | 88,864,081 B (84.8 MiB) | 84.8 MiB | stored uncompressed for fast extraction |
+| DSH engine payload | 88,777,991 B (84.7 MiB) | 84.7 MiB | stored uncompressed for fast extraction |
 | Native runtime (26 libs) | 110,022,864 B (104.9 MiB) | 38.9 MiB | deflated; Android extracts at install |
 | Java dex | ~109 KiB | ~52 KiB | plain platform Views, no AndroidX |
 | License texts | ~240 KiB | ~39 KiB | notices + GPL/LGPL/MIT texts |
