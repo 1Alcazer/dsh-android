@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "dshVersion": "0.2.2-rc.2",
+  "gitVersion": "2.56.1",
+  "packed": "tar.gz with symlinks preserved",
+  "patches": [
+    "app-boot internals fallback (engine/payload-patch.mjs)"
+  ],
+  "pruned": [
+    "@deepseek-ai+libreoffice-kit-wasm@0.2.3",
+    "27 test directories"
+  ],
+  "bytes": 88864081,
+  "sha256": "943c3eb8cf17adac9836c53272cee5e731ff3632a05b118abe5f8921aff30901"
+}

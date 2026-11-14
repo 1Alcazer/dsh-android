@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "note": "Seeded once into the web profile's cordis.patch.yml. Routes that pi-ai ships (openrouter, groq, cerebras, deepseek, together) inherit the installed catalog; siliconflow is hand-declared. Keys are entered on the Models page and stored in DSH's credential store.",
+  "providers": [
+    {
+      "route": "openrouter",
+      "displayName": "OpenRouter",
+      "apiKeyEnv": "OPENROUTER_API_KEY"
+    },
+    {
+      "route": "groq",
+      "displayName": "Groq",
+      "apiKeyEnv": "GROQ_API_KEY"
+    },
+    {
+      "route": "cerebras",
+      "displayName": "Cerebras",
+      "apiKeyEnv": "CEREBRAS_API_KEY"
+    },
+    {
+      "route": "deepseek",
+      "displayName": "DeepSeek API key",
+      "apiKeyEnv": "DEEPSEEK_API_KEY"
+    },
+    {
+      "route": "together",
+      "displayName": "Together AI",
+      "apiKeyEnv": "TOGETHER_API_KEY"
+    },
+    {
+      "route": "siliconflow",
+      "displayName": "SiliconFlow",
+      "apiKeyEnv": "SILICONFLOW_API_KEY",
+      "api": "openai-completions",
+      "baseURL": "https://api.siliconflow.cn/v1",
+      "models": [
+        {
+          "id": "deepseek-ai/DeepSeek-V3.2",
+          "name": "DeepSeek V3.2",
+          "contextWindow": 131072,
+          "maxTokens": 65536
+        },
+        {
+          "id": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+          "name": "Qwen3 Coder 480B",
+          "contextWindow": 262144,
+          "maxTokens": 32768
+        }
+      ]
+    }
+  ]
+}

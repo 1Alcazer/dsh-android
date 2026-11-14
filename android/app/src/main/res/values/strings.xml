@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DSH Android</string>
+    <string name="app_subtitle">DeepSeek Harness, running on your phone</string>
+    <string name="engine_preparing">Preparing the engine…</string>
+</resources>

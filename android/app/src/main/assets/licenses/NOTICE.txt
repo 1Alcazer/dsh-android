@@ -1,0 +1,70 @@
+DSH Android — third-party notices
+=================================
+
+DSH Android is an unofficial shell. It bundles the official DeepSeek Harness
+production tree and a pinned Android arm64 runtime built from Termux packages.
+This file and the accompanying license texts are shipped inside the APK at
+assets/licenses/.
+
+DeepSeek Harness
+  Version: 0.2.2-rc.2
+  License: MIT (DSH-MIT.txt)
+  Source:  https://github.com/deepseek-ai/deepseek-harness
+  The APK also contains the production npm dependency closure under
+  filesDir/engine/node_modules. Each package keeps its own LICENSE file there;
+  those licenses apply to the respective packages.
+
+Native runtime (Termux aarch64 packages)
+  Package            Version        License                    Upstream
+  nodejs             26.13.1        MIT                        nodejs.org
+  libc++             30             Apache-2.0 WITH LLVM-exc.  llvm.org
+  openssl            3.6.5          Apache-2.0                 openssl.org
+  c-ares             1.34.9         MIT                        c-ares.org
+  libicu             79.1           Unicode-3.0                unicode-org.github.io/icu
+  libsqlite          3.54.1-1       Public domain              sqlite.org
+  zlib               1.4            Zlib                       zlib.net
+  libffi             3.8.0          MIT                        github.com/libffi/libffi
+  bash               5.3.20         GPL-3.0-or-later           gnu.org/software/bash
+  libandroid-support 29-1           Apache-2.0 + MIT           github.com/termux/libandroid-support
+  libiconv           1.19.1         LGPL-2.1-or-later          gnu.org/software/libiconv
+  readline           8.3.6          GPL-3.0-or-later           gnu.org/software/readline
+  ncurses            6.5.20250830   X11/MIT-style              invisible-island.net/ncurses
+  git                2.56.1         GPL-2.0-only               git-scm.com
+  libcurl            8.23.0         curl license (MIT-like)    curl.se/docs/copyright.html
+  libnghttp2         1.71.0         MIT                        nghttp2.org
+  libnghttp3         1.19.0         MIT                        github.com/ngtcp2/nghttp3
+  libngtcp2          1.26.0         MIT                        github.com/ngtcp2/ngtcp2
+  libssh2            1.11.1         BSD-3-Clause               libssh2.org
+  pcre2              10.49          BSD-3-Clause               pcre.org
+
+  The Android framework libraries (libc, libdl, libm, liblog, ...) are provided
+  by the operating system and are not redistributed in this APK.
+
+License texts in this directory
+  GPL-2.0.txt    GNU General Public License version 2 (git)
+  GPL-3.0.txt    GNU General Public License version 3 (bash, readline)
+  LGPL-2.1.txt   GNU Lesser General Public License version 2.1 (libiconv)
+  DSH-MIT.txt    DeepSeek Harness MIT license
+  Node-MIT.txt   Node.js license, including bundled third-party notices
+
+Corresponding source
+  The GPL and LGPL binaries are built from the Termux recipes for the exact
+  versions above:
+  https://github.com/termux/termux-packages/tree/master/packages
+  Each recipe points at the upstream source tarball and carries the Termux
+  patches used for Android. Upstream sources are available from the project
+  URLs in the table.
+
+  The binaries differ from upstream only by mechanical ELF string substitutions
+  performed by engine/elf-patch.mjs in the DSH Android source repository:
+  Android-safe SONAMEs (for example libz-1.so instead of libz.so.1) and a
+  RUNPATH of $ORIGIN. No executable code is altered. The scripts that perform
+  these substitutions are part of the corresponding build materials.
+
+  DSH Android source and build scripts:
+  (repository containing this APK's README.md, engine/, and scripts/)
+
+No warranty
+  These components are distributed in the hope that they will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+  or FITNESS FOR A PARTICULAR PURPOSE. See the licenses for details.
