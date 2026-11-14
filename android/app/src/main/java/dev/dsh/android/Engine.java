@@ -407,7 +407,9 @@ public final class Engine {
     }
 
     public File workspaceDir() {
-        File shared = new File("/storage/emulated/0/DSH");
+        File base = android.os.Environment.getExternalStorageDirectory();
+        if (base == null) base = new File("/storage/emulated/0");
+        File shared = new File(base, "DSH");
         try {
             if (shared.isDirectory() || shared.mkdirs()) return shared;
         } catch (SecurityException ignored) {
