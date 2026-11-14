@@ -22,7 +22,7 @@ on any Linux host) without Gradle.
 | ABI | `arm64-v8a` |
 | Android | 7.0+ (minSdk 24), target/compile 36 |
 | APK | `dist/DSH-Android-0.1.0.apk` |
-| APK size | 129,726,339 bytes (123.7 MiB) |
+| APK size | 129,744,224 bytes (123.7 MiB) |
 | APK SHA-256 | `bf1cc946dcd2ddf63db842bde6a10afa3387dd2ed055bd13dada0a9cd81cc023` |
 | Engine payload | 88,777,991 bytes, sha256 `62d6760d9215e0203ac8bb2fd87bae788b0c487424c1a4ccdf2195b2584f0bc1` |
 
