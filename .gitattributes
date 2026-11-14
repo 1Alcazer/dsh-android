@@ -1,0 +1,11 @@
+# Normalize line endings; keep binaries untouched.
+* text=auto eol=lf
+
+*.apk   binary
+*.aab   binary
+*.jks   binary
+*.keystore binary
+*.so    binary
+*.png   binary
+*.jar   binary
+*.gz    binary

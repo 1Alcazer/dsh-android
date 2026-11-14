@@ -1,5 +1,10 @@
 # DSH Android
 
+[![Release](https://img.shields.io/github/v/release/1Alcazer/dsh-android?include_prereleases&style=flat-square&label=release)](https://github.com/1Alcazer/dsh-android/releases)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Android%207.0%2B%20%C2%B7%20arm64-3DDC84?style=flat-square)](#at-a-glance)
+[![Engine](https://img.shields.io/badge/DSH-0.2.2--rc.2-4D6BFE?style=flat-square)](https://www.npmjs.com/package/@deepseek-ai/dsh)
+
 Run the official [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh)
 on an Android phone, natively. No emulator, no Wine, no proot, no remote
 server: a small Java shell starts the real DSH Node engine under a bundled,
@@ -8,6 +13,20 @@ WebView.
 
 This repository builds a signed, installable APK entirely on the device (and
 on any Linux host) without Gradle.
+
+## Download
+
+Grab the signed APK from the latest release:
+
+- [**DSH-Android-0.1.0.apk**](https://github.com/1Alcazer/dsh-android/releases/download/v0.1.0/DSH-Android-0.1.0.apk) (123.7 MiB, arm64)
+- [All releases](https://github.com/1Alcazer/dsh-android/releases)
+
+Verify the download:
+
+```sh
+sha256sum DSH-Android-0.1.0.apk
+# bf1cc946dcd2ddf63db842bde6a10afa3387dd2ed055bd13dada0a9cd81cc023
+```
 
 ## At a glance
 
@@ -34,11 +53,12 @@ releases; Android will warn about installing from an unknown source.
 
 ## Status
 
-The engine payload, bash, git, safe mode, and the loopback HTTP boot path were
-exercised end to end in the build sandbox. The signed APK itself could not be
-installed on this device: the sandbox has no `adb`, no root, and no package
-installer permission. See [docs/device-testing.md](docs/device-testing.md) for
-the exact verification status and the on-device checklist.
+Preview release, published as a signed arm64 APK. The engine payload, bash,
+git, safe mode, and the loopback HTTP boot path were exercised end to end in
+the build sandbox. The signed APK has **not** been installed on physical
+hardware yet: the build environment has no `adb`, root, or package-installer
+permission. See [docs/device-testing.md](docs/device-testing.md) for the exact
+verification status and the on-device checklist.
 
 ## What works
 
@@ -65,7 +85,18 @@ the exact verification status and the on-device checklist.
 - **In-app licenses** — third-party notices and full GPL/LGPL texts under
   About → Third-party licenses and notices.
 
+## Requirements
+
+- Android 7.0 (API 24) or newer, **arm64-v8a** device.
+- About 600 MB of free internal storage for the first launch.
+- 2 GB RAM recommended (the Node engine and WebView run side by side).
+- Network access only for model providers and Git remotes; the engine itself
+  runs locally on `127.0.0.1`.
+
 ## Install
+
+Download the APK from the [latest release](https://github.com/1Alcazer/dsh-android/releases/latest),
+or build it yourself (see [Build](#build)) and use:
 
 ```sh
 adb install -r dist/DSH-Android-0.1.0.apk
@@ -135,8 +166,12 @@ Generated payloads, native libraries, keystores, and APKs are gitignored.
 - [Platform patches](docs/patches.md)
 - [Device testing](docs/device-testing.md)
 - [Third-party notices](docs/THIRD_PARTY_NOTICES.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Legal
+
+The DSH Android shell source is released under the [MIT License](LICENSE).
 
 DSH Android is an unofficial community shell. It is not affiliated with or
 endorsed by DeepSeek. DeepSeek Harness is MIT-licensed. The APK also contains
