@@ -5,6 +5,23 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - 2026-11-15
+
+Fixes outbound connectivity for the bundled Node engine and improves the
+WebView shell feel on device.
+
+### Fixed
+
+- **Engine outbound HTTPS.** The Node process now discovers the Android system
+  CA store (and common bundle locations) and exports `SSL_CERT_FILE`,
+  `SSL_CERT_DIR`, `NODE_EXTRA_CA_CERTS`, and the equivalent Git/cURL
+  variables. Without this, OpenSSL could not verify external certificates, so
+  account sign-in and provider requests failed with network errors even when
+  the device had internet access.
+- **Smoother shell.** WebViews use hardware layers, disable overscroll glow and
+  scrollbars, pre-raster offscreen content where supported, and inject a small
+  mobile polish stylesheet (tap highlight/callout removed, viewport-fit cover).
+
 ## [0.1.1] - 2026-11-15
 
 Reliability and sign-in release. Fixes the WebView popup path that DeepSeek

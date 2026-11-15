@@ -272,6 +272,7 @@ public final class Engine {
         if (gitTemplates.isDirectory()) {
             env.put("GIT_TEMPLATE_DIR", gitTemplates.getAbsolutePath());
         }
+        configureTlsTrust(env);
         env.put("NODE_OPTIONS", "--max-old-space-size=" + v8HeapMb());
         if (!Prefs.telemetry(app)) env.put("DSH_TELEMETRY_DISABLED", "1");
         mkdirs(new File(env.get("HOME")));
@@ -805,6 +806,52 @@ public final class Engine {
         android.app.ActivityManager manager =
                 (android.app.ActivityManager) app.getSystemService(Context.ACTIVITY_SERVICE);
         return manager != null && manager.isLowRamDevice();
+    }
+
+    /**
+     * Node/OpenSSL and Git need a trust store for outbound HTTPS. Android keeps
+     * system roots under /system/etc/security/cacerts; Termux-style bundles live
+     * elsewhere. Point the runtime at whichever path exists so sign-in and
+     * model-provider requests can verify TLS on a real device.
+     */
+    private void configureTlsTrust(Map<String, String> env) {
+        // Prefer an explicit bundle when present (Node's bundled OpenSSL reads
+        // SSL_CERT_FILE; NODE_EXTRA_CA_CERTS adds to Node's default roots).
+        String[] certFiles = {
+                "/system/etc/security/cacerts.pem",
+                "/apex/com.android.conscrypt/cacerts/cacert.pem",
+                "/data/data/com.termux/files/usr/etc/tls/cert.pem",
+                "/system/etc/tls/cert.pem",
+                "/etc/ssl/certs/ca-certificates.crt",
+                "/etc/pki/tls/certs/ca-bundle.crt"
+        };
+        for (String path : certFiles) {
+            File file = new File(path);
+            if (file.isFile() && file.canRead()) {
+                env.putIfAbsent("SSL_CERT_FILE", path);
+                env.putIfAbsent("NODE_EXTRA_CA_CERTS", path);
+                env.putIfAbsent("CURL_CA_BUNDLE", path);
+                env.putIfAbsent("GIT_SSL_CAINFO", path);
+                break;
+            }
+        }
+        String[] certDirs = {
+                "/system/etc/security/cacerts",
+                "/apex/com.android.conscrypt/cacerts",
+                "/data/data/com.termux/files/usr/etc/tls/certs",
+                "/system/etc/security/cacerts_google"
+        };
+        for (String path : certDirs) {
+            File dir = new File(path);
+            if (dir.isDirectory() && dir.canRead()) {
+                env.putIfAbsent("SSL_CERT_DIR", path);
+                env.putIfAbsent("GIT_SSL_CAPATH", path);
+                break;
+            }
+        }
+        if (!env.containsKey("SSL_CERT_FILE") && !env.containsKey("SSL_CERT_DIR")) {
+            LogStore.append("engine", "no system CA store found; outbound TLS may fail");
+        }
     }
 
     /**

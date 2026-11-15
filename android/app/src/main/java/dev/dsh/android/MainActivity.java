@@ -509,6 +509,10 @@ public final class MainActivity extends Activity implements Engine.Listener {
     /** Settings shared by the main surface and the account sign-in window. */
     private void configureWebView(WebView view) {
         view.setBackgroundColor(Ui.color(this, R.color.bg));
+        view.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        view.setVerticalScrollBarEnabled(false);
+        view.setHorizontalScrollBarEnabled(false);
+        view.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         WebView.setWebContentsDebuggingEnabled(false);
 
         WebSettings settings = view.getSettings();
@@ -521,6 +525,7 @@ public final class MainActivity extends Activity implements Engine.Listener {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
+        settings.setSupportZoom(false);
         settings.setUseWideViewPort(true);
         settings.setLoadWithOverviewMode(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
@@ -529,6 +534,7 @@ public final class MainActivity extends Activity implements Engine.Listener {
         settings.setSupportMultipleWindows(true);
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
         settings.setUserAgentString(settings.getUserAgentString() + " DSH-Android/" + appVersion());
+        if (Build.VERSION.SDK_INT >= 23) settings.setOffscreenPreRaster(true);
         if (Build.VERSION.SDK_INT >= 26) settings.setSafeBrowsingEnabled(true);
 
         CookieManager cookies = CookieManager.getInstance();
@@ -676,10 +682,15 @@ public final class MainActivity extends Activity implements Engine.Listener {
             }
             view.evaluateJavascript(
                     "(function(){try{"
-                            + "document.documentElement.style.overscrollBehavior='none';"
+                            + "var d=document.documentElement,s=d.style;"
+                            + "s.overscrollBehavior='none';s.webkitTapHighlightColor='transparent';"
+                            + "s.webkitTouchCallout='none';"
                             + "var m=document.querySelector('meta[name=theme-color]');"
                             + "if(!m){m=document.createElement('meta');m.name='theme-color';"
                             + "document.head.appendChild(m);}m.content='#0B0E14';"
+                            + "var v=document.querySelector('meta[name=viewport]');"
+                            + "if(v){var c=v.getAttribute('content')||'';"
+                            + "if(c.indexOf('viewport-fit')<0)v.setAttribute('content',c+', viewport-fit=cover');}"
                             + "}catch(e){}})();", null);
         }
 

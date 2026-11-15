@@ -25,8 +25,8 @@ JAVA_HOME=${JAVA_HOME:-/data/user/0/com.opencode.android/files/usr/lib/jvm/java-
 BUILD_TOOLS=${BUILD_TOOLS:-$SDK/build-tools/36.0.0}
 PLATFORM=${PLATFORM:-$SDK/platforms/android-36/android.jar}
 AAPT2_BIN=${AAPT2:-/data/data/com.termux/files/usr/bin/aapt2}
-VERSION_NAME=${VERSION_NAME:-0.1.1}
-VERSION_CODE=${VERSION_CODE:-2}
+VERSION_NAME=${VERSION_NAME:-0.1.2}
+VERSION_CODE=${VERSION_CODE:-3}
 MIN_SDK=${MIN_SDK:-24}
 TARGET_SDK=${TARGET_SDK:-36}
 
