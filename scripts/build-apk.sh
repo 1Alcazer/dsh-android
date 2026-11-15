@@ -1,11 +1,18 @@
 #!/system/bin/sh
 # Build a signed DSH Android APK on-device (or on any Linux host) without
-# Gradle: aapt2 -> javac -> d8 -> package_apk.py -> apksigner.
+# Gradle: aapt2 -> javac -> d8 -> package_apk.py -> signature.
+#
+# The signing step uses apksigner. If that produces an unreadable archive
+# (seen on some Android/Termux runtimes, where the large-file copy is cut
+# short), the script falls back to scripts/sign-apk-v2.py, which inserts an
+# APK Signature Scheme v2 block in place. Either way the output is signed with
+# the project key and verified before the script exits.
 #
 # Requires:
 #   * Android SDK platforms/android-36/android.jar and build-tools d8/apksigner
 #   * a JDK 17+ (the Termux OpenJDK 21 build works)
 #   * an Android-native aapt2 (Termux's `aapt2` package)
+#   * python3
 #   * the generated payload under android/app/src/main/{assets,jniLibs}
 #
 # Environment overrides: ANDROID_SDK_ROOT, JAVA_HOME, AAPT2, VERSION_NAME,
@@ -91,13 +98,47 @@ fi
 
 echo "[6/6] signing"
 APK=$DIST/DSH-Android-$VERSION_NAME.apk
-"$JAVA_HOME/bin/java" -jar "$BUILD_TOOLS/lib/apksigner.jar" sign \
-  --ks "$KEYSTORE" --ks-key-alias dsh \
-  --ks-pass "pass:$STORE_PASS" --key-pass "pass:$STORE_PASS" \
-  --min-sdk-version "$MIN_SDK" --v1-signing-enabled true \
-  --v2-signing-enabled true --v3-signing-enabled true \
-  --out "$APK" "$OUT/unsigned.apk"
+rm -f "$APK"
 
+sign_with_build_tools() {
+  "$JAVA_HOME/bin/java" -jar "$BUILD_TOOLS/lib/apksigner.jar" sign \
+    --ks "$KEYSTORE" --ks-key-alias dsh \
+    --ks-pass "pass:$STORE_PASS" --key-pass "pass:$STORE_PASS" \
+    --min-sdk-version "$MIN_SDK" --v1-signing-enabled false \
+    --v2-signing-enabled true --v3-signing-enabled true \
+    --v4-signing-enabled false \
+    --out "$APK" "$OUT/unsigned.apk"
+}
+
+apk_is_readable() {
+  python3 - "$1" <<'PY'
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as archive:
+    sys.exit(0 if archive.testzip() is None else 1)
+PY
+}
+
+# apksigner's large-file copy is unreliable on some Android/Termux runtimes:
+# it can exit 0 after writing a truncated ZIP. Validate the archive and, if it
+# is broken, sign with scripts/sign-apk-v2.py, which writes the v2 block
+# directly. Both paths keep the same key and certificate.
+if ! sign_with_build_tools || ! apk_is_readable "$APK"; then
+  echo "apksigner produced an unreadable archive; using the built-in v2 signer"
+  rm -f "$APK"
+  mkdir -p "$OUT/keytool-classes"
+  "$JAVA_HOME/bin/javac" -d "$OUT/keytool-classes" "$ROOT/scripts/DumpSigningKey.java"
+  "$JAVA_HOME/bin/java" -cp "$OUT/keytool-classes" DumpSigningKey \
+    "$KEYSTORE" dsh "$STORE_PASS" "$STORE_PASS" \
+    "$OUT/signing-key.pk8" "$OUT/signing-cert.der" "$OUT/signing-public.der"
+  python3 "$ROOT/scripts/sign-apk-v2.py" sign \
+    --key "$OUT/signing-key.pk8" --cert "$OUT/signing-cert.der" \
+    --public "$OUT/signing-public.der" \
+    --in "$OUT/unsigned.apk" --out "$APK"
+  rm -f "$OUT/signing-key.pk8" "$OUT/signing-cert.der" "$OUT/signing-public.der"
+fi
+
+apk_is_readable "$APK" || { echo "signing failed: $APK is not a valid ZIP" >&2; exit 1; }
+python3 "$ROOT/scripts/sign-apk-v2.py" verify "$APK"
 "$JAVA_HOME/bin/java" -jar "$BUILD_TOOLS/lib/apksigner.jar" verify --print-certs "$APK" | head -5
 echo
 echo "APK: $APK"

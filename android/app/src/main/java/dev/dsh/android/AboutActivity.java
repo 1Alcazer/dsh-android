@@ -77,7 +77,13 @@ public final class AboutActivity extends Activity {
         addValue(engineCard, "Boot mode", "web profile · loopback HTTP · token auth");
         addValue(engineCard, "Current state", engine.state().name().toLowerCase(Locale.US)
                 + (engine.port() > 0 ? " · port " + engine.port() : ""));
+        addValue(engineCard, "WebView", webViewVersion());
+        TextView httpsValue = addValue(engineCard, "Outbound HTTPS", "checking…");
+        TextView loopbackValue = addValue(engineCard, "Engine endpoint",
+                engine.port() > 0 ? "http://127.0.0.1:" + engine.port() : "not running");
         content.addView(engineCard);
+        checkHttps(httpsValue);
+        checkLoopback(loopbackValue);
 
         content.addView(section("Device"));
         LinearLayout deviceCard = card();
@@ -148,7 +154,7 @@ public final class AboutActivity extends Activity {
         return card;
     }
 
-    private void addValue(LinearLayout card, String label, String value) {
+    private TextView addValue(LinearLayout card, String label, String value) {
         LinearLayout row = Ui.column(this);
         row.setPadding(0, Ui.dp(this, 9), 0, Ui.dp(this, 9));
         TextView heading = Ui.text(this, label, 11, Ui.color(this, R.color.text_dim));
@@ -160,6 +166,74 @@ public final class AboutActivity extends Activity {
         row.addView(heading);
         row.addView(detail);
         card.addView(row);
+        return detail;
+    }
+
+    private String webViewVersion() {
+        if (Build.VERSION.SDK_INT < 26) return "system WebView";
+        try {
+            android.content.pm.PackageInfo info = android.webkit.WebView.getCurrentWebViewPackage();
+            if (info == null) return "unknown";
+            return info.packageName + " " + info.versionName;
+        } catch (Exception ignored) {
+            return "unknown";
+        }
+    }
+
+    private void checkHttps(TextView target) {
+        new Thread(() -> {
+            String result;
+            java.net.HttpURLConnection connection = null;
+            try {
+                connection = (java.net.HttpURLConnection)
+                        new java.net.URL("https://api.deepseek.com/").openConnection();
+                connection.setConnectTimeout(8_000);
+                connection.setReadTimeout(8_000);
+                connection.setRequestMethod("GET");
+                int code = connection.getResponseCode();
+                // 401 is the expected answer without an API key: TLS worked.
+                result = code == 401 ? "reachable (TLS ok · HTTP 401 without key)"
+                        : "reachable (HTTP " + code + ")";
+            } catch (Exception error) {
+                result = "failed: " + error.getClass().getSimpleName();
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+            String text = result;
+            runOnUiThread(() -> {
+                if (!isFinishing()) target.setText(text);
+            });
+        }, "dsh-net-check").start();
+    }
+
+    private void checkLoopback(TextView target) {
+        int port = engine.port();
+        if (port <= 0) {
+            target.setText("not running");
+            return;
+        }
+        new Thread(() -> {
+            String result;
+            java.net.HttpURLConnection connection = null;
+            try {
+                connection = (java.net.HttpURLConnection)
+                        new java.net.URL("http://127.0.0.1:" + port + "/").openConnection();
+                connection.setConnectTimeout(4_000);
+                connection.setReadTimeout(4_000);
+                connection.setInstanceFollowRedirects(false);
+                int code = connection.getResponseCode();
+                result = "http://127.0.0.1:" + port + " · responding (HTTP " + code + ")";
+            } catch (Exception error) {
+                result = "http://127.0.0.1:" + port + " · unreachable ("
+                        + error.getClass().getSimpleName() + ")";
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+            String text = result;
+            runOnUiThread(() -> {
+                if (!isFinishing()) target.setText(text);
+            });
+        }, "dsh-loopback-check").start();
     }
 
     private TextView section(String title) {

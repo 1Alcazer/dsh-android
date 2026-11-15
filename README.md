@@ -18,14 +18,14 @@ on any Linux host) without Gradle.
 
 Grab the signed APK from the latest release:
 
-- [**DSH-Android-0.1.0.apk**](https://github.com/1Alcazer/dsh-android/releases/download/v0.1.0/DSH-Android-0.1.0.apk) (123.7 MiB, arm64)
+- [**DSH-Android-0.1.1.apk**](https://github.com/1Alcazer/dsh-android/releases/download/v0.1.1/DSH-Android-0.1.1.apk) (123.7 MiB, arm64)
 - [All releases](https://github.com/1Alcazer/dsh-android/releases)
 
 Verify the download:
 
 ```sh
-sha256sum DSH-Android-0.1.0.apk
-# bf1cc946dcd2ddf63db842bde6a10afa3387dd2ed055bd13dada0a9cd81cc023
+sha256sum DSH-Android-0.1.1.apk
+# 519ffca69c5955faf2080d8e10c531db40b0f8f73738eff4a5e2d38c7df07c84
 ```
 
 ## At a glance
@@ -33,16 +33,16 @@ sha256sum DSH-Android-0.1.0.apk
 | Item | Value |
 | --- | --- |
 | Package | `dev.dsh.android` |
-| Version | `0.1.0` (versionCode 1) |
+| Version | `0.1.1` (versionCode 2) |
 | DSH engine | `@deepseek-ai/dsh@0.2.2-rc.2` (official npm production tree) |
 | Node runtime | `26.13.1` (Termux aarch64) |
 | Shell | GNU bash `5.3.20` |
 | Version control | Git `2.56.1`, HTTPS remotes |
 | ABI | `arm64-v8a` |
 | Android | 7.0+ (minSdk 24), target/compile 36 |
-| APK | `dist/DSH-Android-0.1.0.apk` |
-| APK size | 129,744,224 bytes (123.7 MiB) |
-| APK SHA-256 | `bf1cc946dcd2ddf63db842bde6a10afa3387dd2ed055bd13dada0a9cd81cc023` |
+| APK | `dist/DSH-Android-0.1.1.apk` |
+| APK size | 129,736,866 bytes (123.7 MiB) |
+| APK SHA-256 | `519ffca69c5955faf2080d8e10c531db40b0f8f73738eff4a5e2d38c7df07c84` |
 | Engine payload | 88,777,991 bytes, sha256 `62d6760d9215e0203ac8bb2fd87bae788b0c487424c1a4ccdf2195b2584f0bc1` |
 
 The APK in `dist/` is signed with a local development key. Its certificate
@@ -53,9 +53,15 @@ releases; Android will warn about installing from an unknown source.
 
 ## Status
 
-Preview release, published as a signed arm64 APK. The engine payload, bash,
-git, safe mode, and the loopback HTTP boot path were exercised end to end in
-the build sandbox. The signed APK has **not** been installed on physical
+Preview release, published as a signed arm64 APK. 0.1.1 is a reliability and
+sign-in release: it adds the WebView popup window that DeepSeek account sign-in
+requires, restores predictive back, hardens session/token recovery, and fixes
+engine, service, logging, and heap-sizing issues. See the
+[changelog](CHANGELOG.md) for the full list.
+
+The engine payload, bash, git, safe mode, and the loopback HTTP boot path were
+exercised end to end in the build sandbox, and the signature is verified with
+the official `apksigner`. The signed APK has **not** been installed on physical
 hardware yet: the build environment has no `adb`, root, or package-installer
 permission. See [docs/device-testing.md](docs/device-testing.md) for the exact
 verification status and the on-device checklist.
@@ -68,7 +74,8 @@ verification status and the on-device checklist.
 - **Native shell** — plain Java and platform Views. No AndroidX, Compose,
   Gradle, or JavaScript shell.
 - **Foreground service** — keeps the Node process alive in the background with
-  a low-importance notification, wake lock, and start/stop actions.
+  a low-importance notification, wake lock, start/stop actions, and bounded
+  restart backoff if the engine dies.
 - **Real bash** — GNU bash 5.3.20 with readline, ncurses, iconv, and Android
   support libraries. DSH's `bash` tool works.
 - **Git** — Git 2.56.1 core plus HTTPS transport. `init`, `add`, `commit`,
@@ -81,6 +88,8 @@ verification status and the on-device checklist.
   telemetry toggle (off by default), battery settings, logs, about.
 - **Downloads, uploads, microphone** — wired through Android's own
   `DownloadManager`, file chooser, and WebView permission bridge.
+- **Account sign-in** — the DeepSeek account popup, loopback OAuth callback,
+  and the copy-link fallback all work in the WebView.
 - **Crash and engine logs** — in-app viewer with copy/export.
 - **In-app licenses** — third-party notices and full GPL/LGPL texts under
   About → Third-party licenses and notices.
@@ -99,7 +108,7 @@ Download the APK from the [latest release](https://github.com/1Alcazer/dsh-andro
 or build it yourself (see [Build](#build)) and use:
 
 ```sh
-adb install -r dist/DSH-Android-0.1.0.apk
+adb install -r dist/DSH-Android-0.1.1.apk
 ```
 
 Or copy the APK to the phone and open it. Allow installation from the file
@@ -123,6 +132,9 @@ screen on for the first launch.
 - Open **Settings → Model providers** for the seeded provider list.
 - Add API keys in the DSH interface under **Settings → Models**. Keys are stored
   by DSH, not by the Android shell.
+- To use a DeepSeek account instead of an API key, open
+  **Settings → Account → Sign in**. The shell shows the popup window the
+  account flow needs; see [Account sign-in](docs/account-sign-in.md).
 - Grant **all-files access** in the native Settings screen if you want projects
   under `/storage/emulated/0` (the default workspace is
   `/storage/emulated/0/DSH`).
@@ -164,6 +176,7 @@ Generated payloads, native libraries, keystores, and APKs are gitignored.
 - [Size budget](docs/size-budget.md)
 - [Limitations](docs/limitations.md)
 - [Platform patches](docs/patches.md)
+- [Account sign-in](docs/account-sign-in.md)
 - [Device testing](docs/device-testing.md)
 - [Third-party notices](docs/THIRD_PARTY_NOTICES.md)
 - [Changelog](CHANGELOG.md)

@@ -6,21 +6,41 @@ import android.app.Service;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.PowerManager;
 
 /**
  * Keeps the engine process alive (and the CPU awake) while the app is in the
  * background, with a low-importance notification for status and control.
+ *
+ * <p>The service uses the {@code specialUse} foreground type because it hosts a
+ * local developer tool rather than syncing data; Android 15 caps {@code
+ * dataSync} at six hours, which would silently kill long sessions.</p>
  */
 public final class EngineService extends Service implements Engine.Listener {
     public static final String ACTION_START = "dev.dsh.android.action.START";
     public static final String ACTION_STOP = "dev.dsh.android.action.STOP";
     private static final int NOTIFICATION_ID = 41;
+    private static final long[] RESTART_DELAYS_MS = {
+            3_000L, 10_000L, 30_000L, 60_000L, 120_000L
+    };
 
+    private final Handler main = new Handler(Looper.getMainLooper());
     private Engine engine;
     private PowerManager.WakeLock wakeLock;
     private boolean foreground;
+    private boolean explicitStop;
+    private boolean restartScheduled;
+    private int failures;
+
+    private final Runnable restart = () -> {
+        restartScheduled = false;
+        if (explicitStop || engine.state() == Engine.State.RUNNING) return;
+        LogStore.append("service", "auto-restarting engine after crash");
+        engine.start();
+    };
 
     @Override
     public void onCreate() {
@@ -38,10 +58,15 @@ public final class EngineService extends Service implements Engine.Listener {
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? null : intent.getAction();
         if (ACTION_STOP.equals(action)) {
+            explicitStop = true;
+            main.removeCallbacks(restart);
+            restartScheduled = false;
             engine.stop();
             stopSelf();
             return START_NOT_STICKY;
         }
+        explicitStop = false;
+        if (startId == 1) failures = 0;
         startInForeground(notificationText());
         engine.start();
         return START_STICKY;
@@ -50,9 +75,9 @@ public final class EngineService extends Service implements Engine.Listener {
     private void startInForeground(String text) {
         Notification notification = buildNotification(text);
         try {
-            if (Build.VERSION.SDK_INT >= 29) {
+            if (Build.VERSION.SDK_INT >= 34) {
                 startForeground(NOTIFICATION_ID, notification,
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
             } else {
                 startForeground(NOTIFICATION_ID, notification);
             }
@@ -108,12 +133,35 @@ public final class EngineService extends Service implements Engine.Listener {
 
     @Override
     public void onState(Engine.State state, String message, int progressPercent) {
+        if (state == Engine.State.RUNNING) {
+            failures = 0;
+            restartScheduled = false;
+            main.removeCallbacks(restart);
+        } else if (state == Engine.State.FAILED) {
+            scheduleRestart();
+        }
         if (!foreground) return;
-        android.app.NotificationManager manager = getSystemService(android.app.NotificationManager.class);
+        android.app.NotificationManager manager =
+                getSystemService(android.app.NotificationManager.class);
         if (manager != null) {
             manager.notify(NOTIFICATION_ID, buildNotification(notificationText()));
         }
         updateWakeLock();
+    }
+
+    private void scheduleRestart() {
+        if (explicitStop || restartScheduled || failures >= RESTART_DELAYS_MS.length) {
+            if (failures >= RESTART_DELAYS_MS.length) {
+                LogStore.append("service", "engine keeps failing; leaving it stopped");
+            }
+            return;
+        }
+        long delay = RESTART_DELAYS_MS[failures];
+        failures++;
+        restartScheduled = true;
+        LogStore.append("service", "engine failed; retrying in " + (delay / 1000) + "s ("
+                + failures + "/" + RESTART_DELAYS_MS.length + ")");
+        main.postDelayed(restart, delay);
     }
 
     private void updateWakeLock() {
@@ -131,6 +179,7 @@ public final class EngineService extends Service implements Engine.Listener {
 
     @Override
     public void onDestroy() {
+        main.removeCallbacks(restart);
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         if (engine != null) engine.removeListener(this);
         super.onDestroy();

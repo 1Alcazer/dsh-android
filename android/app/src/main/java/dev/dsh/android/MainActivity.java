@@ -15,6 +15,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Message;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
@@ -42,9 +43,13 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * The single native screen: a branded loading surface that hands off to the
@@ -78,9 +83,16 @@ public final class MainActivity extends Activity implements Engine.Listener {
     private String url;
     private String pendingUrl;
     private int authRetries;
+    private boolean authRestarted;
+    private boolean historyCleared;
     private boolean pageLoaded;
     private boolean loadFailed;
     private boolean destroyed;
+
+    private FrameLayout popupLayer;
+    private FrameLayout popupContainer;
+    private WebView popupWebView;
+    private TextView popupTitle;
 
     private ValueCallback<Uri[]> fileCallback;
     private PermissionRequest micRequest;
@@ -115,9 +127,12 @@ public final class MainActivity extends Activity implements Engine.Listener {
         root.addView(main);
         root.addView(loading, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        root.addView(buildPopupLayer(), new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         setContentView(root);
         Ui.insets(this, root);
+        BackCompat.enable(this, this::handleBack);
 
         ensureWebView();
         engine.addListener(this);
@@ -295,6 +310,69 @@ public final class MainActivity extends Activity implements Engine.Listener {
         return overlay;
     }
 
+    private FrameLayout buildPopupLayer() {
+        popupLayer = new FrameLayout(this);
+        popupLayer.setBackgroundColor(Color.argb(200, 0, 0, 0));
+        popupLayer.setVisibility(View.GONE);
+        popupLayer.setClickable(true);
+
+        LinearLayout card = Ui.column(this);
+        card.setBackground(Ui.outlined(this, Ui.color(this, R.color.bg), 16,
+                Ui.color(this, R.color.divider)));
+
+        LinearLayout bar = Ui.row(this);
+        bar.setPadding(Ui.dp(this, 14), Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 8));
+        popupTitle = Ui.text(this, "Sign in", 15, Ui.color(this, R.color.text));
+        popupTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        bar.addView(popupTitle, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView close = Ui.text(this, "✕", 20, Ui.color(this, R.color.text));
+        close.setGravity(Gravity.CENTER);
+        close.setBackground(Ui.rounded(this, Color.argb(34, 255, 255, 255), 18));
+        close.setClickable(true);
+        close.setOnClickListener(v -> closePopup());
+        bar.addView(close, new LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 36)));
+        card.addView(bar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        popupContainer = new FrameLayout(this);
+        card.addView(popupContainer, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        FrameLayout.LayoutParams cardParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        cardParams.setMargins(Ui.dp(this, 8), Ui.dp(this, 30), Ui.dp(this, 8), Ui.dp(this, 8));
+        popupLayer.addView(card, cardParams);
+        return popupLayer;
+    }
+
+    private WebView openPopupWindow() {
+        closePopup();
+        WebView child = new WebView(this);
+        configureWebView(child);
+        child.setWebViewClient(createWebClient(true));
+        child.setWebChromeClient(new DshChromeClient());
+        popupContainer.addView(child, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        popupWebView = child;
+        popupTitle.setText("Sign in");
+        popupLayer.setVisibility(View.VISIBLE);
+        popupLayer.bringToFront();
+        return child;
+    }
+
+    private void closePopup() {
+        WebView child = popupWebView;
+        popupWebView = null;
+        if (child != null) {
+            if (popupContainer != null) popupContainer.removeView(child);
+            child.stopLoading();
+            child.destroy();
+        }
+        if (popupLayer != null) popupLayer.setVisibility(View.GONE);
+        CookieManager.getInstance().flush();
+    }
+
     private void resetSplash() {
         loadFailed = false;
         errorText.setVisibility(View.GONE);
@@ -420,10 +498,20 @@ public final class MainActivity extends Activity implements Engine.Listener {
     private void ensureWebView() {
         if (webView != null) return;
         webView = new WebView(this);
-        webView.setBackgroundColor(Ui.color(this, R.color.bg));
+        configureWebView(webView);
+        webView.setWebViewClient(createWebClient(false));
+        webView.setWebChromeClient(new DshChromeClient());
+        webView.setDownloadListener(new DshDownloadListener());
+        webContainer.addView(webView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    /** Settings shared by the main surface and the account sign-in window. */
+    private void configureWebView(WebView view) {
+        view.setBackgroundColor(Ui.color(this, R.color.bg));
         WebView.setWebContentsDebuggingEnabled(false);
 
-        WebSettings settings = webView.getSettings();
+        WebSettings settings = view.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
@@ -436,18 +524,21 @@ public final class MainActivity extends Activity implements Engine.Listener {
         settings.setUseWideViewPort(true);
         settings.setLoadWithOverviewMode(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        // DeepSeek account sign-in opens a popup window; without this the
+        // request is silently dropped and the button appears to do nothing.
+        settings.setSupportMultipleWindows(true);
+        settings.setJavaScriptCanOpenWindowsAutomatically(true);
         settings.setUserAgentString(settings.getUserAgentString() + " DSH-Android/" + appVersion());
         if (Build.VERSION.SDK_INT >= 26) settings.setSafeBrowsingEnabled(true);
 
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
-        cookies.setAcceptThirdPartyCookies(webView, true);
+        cookies.setAcceptThirdPartyCookies(view, true);
+    }
 
-        webView.setWebViewClient(new DshWebClient());
-        webView.setWebChromeClient(new DshChromeClient());
-        webView.setDownloadListener(new DshDownloadListener());
-        webContainer.addView(webView, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    private WebViewClient createWebClient(boolean popup) {
+        if (Build.VERSION.SDK_INT >= 26) return new DshWebClient26(popup);
+        return new DshWebClient(popup);
     }
 
     private String appVersion() {
@@ -463,22 +554,81 @@ public final class MainActivity extends Activity implements Engine.Listener {
         return "127.0.0.1".equals(host) || "localhost".equals(host) || "::1".equals(host);
     }
 
-    private final class DshWebClient extends WebViewClient {
+    /** Rewrites the app-only scheme the DSH frontend uses for attachments. */
+    private String mapDshApp(Uri uri) {
+        if (!"dsh-app".equals(uri.getScheme())) return null;
+        int port = engine.port();
+        if (port <= 0) return null;
+        String path = uri.getPath();
+        if (path == null || path.isEmpty()) path = "/";
+        StringBuilder mapped = new StringBuilder("http://127.0.0.1:").append(port).append(path);
+        if (uri.getQuery() != null) mapped.append('?').append(uri.getQuery());
+        return mapped.toString();
+    }
+
+    private WebResourceResponse fetchLoopback(String mapped) {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new java.net.URL(mapped).openConnection();
+            connection.setConnectTimeout(10_000);
+            connection.setReadTimeout(30_000);
+            connection.setInstanceFollowRedirects(true);
+            String cookie = CookieManager.getInstance().getCookie(mapped);
+            if (cookie != null) connection.setRequestProperty("Cookie", cookie);
+            connection.setRequestProperty("Accept", "*/*");
+            int code = connection.getResponseCode();
+            InputStream stream = code >= 400
+                    ? connection.getErrorStream() : connection.getInputStream();
+            if (stream == null) return null;
+            String contentType = connection.getContentType();
+            String mime = "application/octet-stream";
+            String encoding = null;
+            if (contentType != null) {
+                int semi = contentType.indexOf(';');
+                mime = (semi < 0 ? contentType : contentType.substring(0, semi)).trim();
+                int charset = contentType.toLowerCase(Locale.US).indexOf("charset=");
+                if (charset >= 0) encoding = contentType.substring(charset + 8).trim();
+            }
+            Map<String, String> headers = new HashMap<>();
+            String disposition = connection.getHeaderField("Content-Disposition");
+            if (disposition != null) headers.put("Content-Disposition", disposition);
+            return new WebResourceResponse(mime, encoding, code,
+                    connection.getResponseMessage(), headers, stream);
+        } catch (Exception error) {
+            LogStore.append("web", "dsh-app fetch failed: " + error);
+            if (connection != null) connection.disconnect();
+            return null;
+        }
+    }
+
+    private class DshWebClient extends WebViewClient {
+        final boolean popup;
+
+        DshWebClient(boolean popup) {
+            this.popup = popup;
+        }
+
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-            return handleUri(request.getUrl());
+            return handleUri(view, request.getUrl());
         }
 
         @Override
         @SuppressWarnings("deprecation")
         public boolean shouldOverrideUrlLoading(WebView view, String value) {
-            return handleUri(Uri.parse(value));
+            return handleUri(view, Uri.parse(value));
         }
 
-        private boolean handleUri(Uri uri) {
+        private boolean handleUri(WebView view, Uri uri) {
             String scheme = uri.getScheme();
             if (scheme == null) return false;
-            if (("http".equals(scheme) || "https".equals(scheme)) && isLoopback(uri)) {
+            if ("dsh-app".equals(scheme)) {
+                String mapped = mapDshApp(uri);
+                if (mapped != null) view.loadUrl(mapped);
+                return true;
+            }
+            if (("http".equals(scheme) || "https".equals(scheme))
+                    && (isLoopback(uri) || popup)) {
                 return false;
             }
             if ("http".equals(scheme) || "https".equals(scheme)
@@ -494,14 +644,36 @@ public final class MainActivity extends Activity implements Engine.Listener {
         }
 
         @Override
+        public WebResourceResponse shouldInterceptRequest(WebView view,
+                                                          WebResourceRequest request) {
+            String mapped = mapDshApp(request.getUrl());
+            if (mapped == null) return null;
+            return fetchLoopback(mapped);
+        }
+
+        @Override
         public void onPageCommitVisible(WebView view, String loadedUrl) {
-            hideLoading();
+            if (!popup) hideLoading();
         }
 
         @Override
         public void onPageFinished(WebView view, String loadedUrl) {
+            CookieManager.getInstance().flush();
+            if (popup) {
+                if (view == popupWebView && view.getTitle() != null) {
+                    popupTitle.setText(view.getTitle());
+                }
+                return;
+            }
             pageProgress.setVisibility(View.GONE);
             hideLoading();
+            if (!historyCleared && loadedUrl != null
+                    && isLoopback(Uri.parse(loadedUrl))) {
+                // Drop the one-time token URL from the back stack; the auth
+                // cookie is already stored.
+                view.clearHistory();
+                historyCleared = true;
+            }
             view.evaluateJavascript(
                     "(function(){try{"
                             + "document.documentElement.style.overscrollBehavior='none';"
@@ -514,40 +686,65 @@ public final class MainActivity extends Activity implements Engine.Listener {
         @Override
         public void onReceivedError(WebView view, WebResourceRequest request,
                                     WebResourceError error) {
-            if (request.isForMainFrame()) {
-                showLoadError(error.getDescription() == null
-                        ? "The interface failed to load." : error.getDescription().toString());
+            if (!request.isForMainFrame()) return;
+            String detail = error.getDescription() == null
+                    ? "The page failed to load." : error.getDescription().toString();
+            if (popup) {
+                toast("Sign-in page: " + detail);
+            } else {
+                showLoadError(detail);
             }
         }
 
         @Override
         public void onReceivedHttpError(WebView view, WebResourceRequest request,
                                         WebResourceResponse response) {
-            if (!request.isForMainFrame()) return;
+            if (!request.isForMainFrame() || popup) return;
             int status = response.getStatusCode();
-            if (status == 401 || status == 403) {
-                if (authRetries < 2 && pendingUrl != null) {
-                    authRetries++;
-                    view.postDelayed(() -> {
-                        if (!destroyed) view.loadUrl(pendingUrl);
-                    }, 600);
-                } else {
-                    showLoadError("The interface rejected the session (HTTP " + status
-                            + "). Restart the engine to get a fresh token.");
-                }
+            if (status != 401 && status != 403) return;
+            if (authRetries < 2 && pendingUrl != null) {
+                authRetries++;
+                view.postDelayed(() -> {
+                    if (!destroyed && authRetries <= 2 && pendingUrl != null) {
+                        view.loadUrl(pendingUrl);
+                    }
+                }, 800);
+            } else if (!authRestarted) {
+                // A restarted engine issues a fresh token; reuse it via onReady.
+                authRestarted = true;
+                showLoading("Refreshing the engine session…");
+                engine.restart();
+            } else {
+                showLoadError("The interface rejected the session (HTTP " + status
+                        + "). Open Settings and restart the engine.");
             }
+        }
+    }
+
+    /**
+     * Only loaded on API 26+, where RenderProcessGoneDetail exists. Keeping the
+     * override out of the base client avoids a verifier failure on Android 7.
+     */
+    private final class DshWebClient26 extends DshWebClient {
+        DshWebClient26(boolean popup) {
+            super(popup);
         }
 
         @Override
-        public boolean onRenderProcessGone(WebView view, android.webkit.RenderProcessGoneDetail detail) {
+        public boolean onRenderProcessGone(WebView view,
+                                           android.webkit.RenderProcessGoneDetail detail) {
             if (destroyed) return true;
             LogStore.append("web", "renderer gone, rebuilding WebView");
+            if (popup) {
+                root.post(MainActivity.this::closePopup);
+                return true;
+            }
             webContainer.removeView(view);
             view.destroy();
             webView = null;
             ensureWebView();
             showLoading("Reloading the interface…");
-            if (url != null) webView.loadUrl(url);
+            if (pendingUrl != null) webView.loadUrl(pendingUrl);
             return true;
         }
     }
@@ -641,9 +838,36 @@ public final class MainActivity extends Activity implements Engine.Listener {
         }
 
         @Override
+        public void onReceivedTitle(WebView view, String title) {
+            if (view == popupWebView && title != null && !title.isEmpty()) {
+                popupTitle.setText(title);
+            }
+        }
+
+        @Override
         public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture,
-                                      android.os.Message resultMsg) {
-            return false;
+                                      Message resultMsg) {
+            // Account sign-in calls window.open('about:blank', '_blank') and then
+            // navigates the returned handle. Hand it a real child WebView so the
+            // JS handle stays valid and the loopback callback can complete.
+            if (view != webView || resultMsg == null
+                    || !(resultMsg.obj instanceof WebView.WebViewTransport)) {
+                return false;
+            }
+            WebView child = openPopupWindow();
+            WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+            transport.setWebView(child);
+            resultMsg.sendToTarget();
+            return true;
+        }
+
+        @Override
+        public void onCloseWindow(WebView window) {
+            if (window == popupWebView) {
+                root.post(MainActivity.this::closePopup);
+                return;
+            }
+            super.onCloseWindow(window);
         }
     }
 
@@ -771,7 +995,10 @@ public final class MainActivity extends Activity implements Engine.Listener {
         url = readyUrl;
         pendingUrl = readyUrl;
         authRetries = 0;
+        authRestarted = false;
+        historyCleared = false;
         loadFailed = false;
+        closePopup();
         ensureWebView();
         webView.loadUrl(readyUrl);
         topStatus.setText("loading");
@@ -801,15 +1028,27 @@ public final class MainActivity extends Activity implements Engine.Listener {
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
+        handleBack();
+    }
+
+    private void handleBack() {
+        if (popupWebView != null) {
+            closePopup();
+            return;
+        }
         if (webView != null && webView.canGoBack()) {
             webView.goBack();
             return;
         }
-        if (loading.getVisibility() == View.VISIBLE && pageLoaded) {
-            moveTaskToBack(true);
-            return;
-        }
         moveTaskToBack(true);
+    }
+
+    @Override
+    protected void onPause() {
+        // The auth cookie is HttpOnly and lives in the WebView's cookie jar;
+        // flush it before the process can be killed in the background.
+        CookieManager.getInstance().flush();
+        super.onPause();
     }
 
     @Override
@@ -827,6 +1066,8 @@ public final class MainActivity extends Activity implements Engine.Listener {
             micRequest.deny();
             micRequest = null;
         }
+        closePopup();
+        CookieManager.getInstance().flush();
         engine.removeListener(this);
         if (webView != null) {
             webContainer.removeView(webView);

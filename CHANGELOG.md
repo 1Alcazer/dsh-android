@@ -5,6 +5,57 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-11-15
+
+Reliability and sign-in release. Fixes the WebView popup path that DeepSeek
+account sign-in depends on, plus several long-running stability issues.
+
+### Fixed
+
+- **DeepSeek account sign-in.** The WebView now enables multiple windows and
+  implements `onCreateWindow`, so the `window.open()` popup used by
+  `dsh-client-ui-settings-account` is no longer dropped. The popup inherits
+  the cookie jar and can complete the loopback `/oauth/callback` exchange,
+  after which `window.close()` dismisses it. The "Copy sign-in link" fallback
+  still works.
+- **Android 7 verifier crash.** `onRenderProcessGone(WebView,
+  RenderProcessGoneDetail)` moved to an API-26-only client subclass; the base
+  client no longer references an API-26 type on minSdk 24.
+- **Predictive back.** Registered an `OnBackInvokedCallback` on Android 13+
+  and enabled `android:enableOnBackInvokedCallback`, so back navigation no
+  longer bypasses the WebView history when targeting Android 16.
+- **Session persistence.** Cookies are flushed on pause, page finish, and
+  destroy, so the 30-day auth cookie survives process death.
+- **Stale-token recovery.** A 401 reloads the one-time token URL twice and
+  then restarts the engine for a fresh token, instead of looping on a dead
+  URL. The token entry is removed from WebView history after the redirect.
+- **Attachment URLs.** `dsh-app://app/api/...` URLs used by file previews are
+  mapped to the loopback server and proxied with the current cookie.
+- **Engine cleanup.** Stop, crash, and stale-PID cleanup now walk `/proc` and
+  kill descendant bash/git/session processes, not just the Node parent.
+- **Workspace selection.** `$EXTERNAL_STORAGE/DSH` is only used when it is
+  actually writable; otherwise the app-private workspace is selected.
+- **Log safety.** Timestamp formatting is thread-local, file writes are
+  synchronized, and the engine log rotates at 2 MiB with one previous file.
+- **Foreground service type.** Switched from `dataSync` (capped at six hours
+  on Android 15+) to `specialUse`, with the required subtype property.
+- **Network security.** Cleartext is restricted to `127.0.0.1`, `localhost`,
+  and `::1`; external traffic must use TLS.
+- **Crash recovery.** The service retries an unexpectedly stopped engine with
+  bounded backoff (3 s, 10 s, 30 s, 60 s, 120 s) and honours explicit stop.
+- **V8 heap sizing.** The old-space limit now scales with physical RAM (512 MB
+  to 2 GB) instead of a binary low-RAM flag.
+
+### Added
+
+- About screen diagnostics: WebView package/version, outbound HTTPS
+  reachability, and live loopback engine status.
+
+### Known limitations
+
+- Device-side installation and real account sign-in still need validation on
+  physical hardware; see [docs/device-testing.md](docs/device-testing.md).
+
 ## [0.1.0] - 2026-11-14
 
 First public preview. Signed arm64 APK published as a release asset.

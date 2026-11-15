@@ -122,12 +122,16 @@ Stage by stage:
 5. `scripts/package_apk.py` adds dex, assets, and libs, stores
    `AndroidManifest.xml`, `resources.arsc`, and the engine payload uncompressed,
    aligns stored entries, and deflates native libraries;
-6. `apksigner` signs with v1/v2/v3 schemes.
+6. the APK is signed with APK Signature Scheme v2. `apksigner` is tried
+   first; because some Android/Termux runtimes truncate its output near
+   130 MB, the script validates the archive and falls back to
+   `scripts/sign-apk-v2.py`, which inserts the same v2 block directly.
+   v2 is required for targetSdk 36 and is sufficient for minSdk 24.
 
 Output:
 
 ```
-dist/DSH-Android-0.1.0.apk
+dist/DSH-Android-0.1.1.apk
 ```
 
 Environment overrides:
@@ -157,7 +161,9 @@ apksigner sign --ks my-release.jks --out DSH-Android.apk \
   android/app/build/unsigned.apk
 ```
 
-Keystores and APKs are gitignored.
+Both signing paths keep the certificate in the keystore, so a new build
+upgrades an installed older version instead of conflicting with it. Keystores
+and APKs are gitignored.
 
 ## Reproducibility
 

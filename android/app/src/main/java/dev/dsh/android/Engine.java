@@ -272,7 +272,7 @@ public final class Engine {
         if (gitTemplates.isDirectory()) {
             env.put("GIT_TEMPLATE_DIR", gitTemplates.getAbsolutePath());
         }
-        env.put("NODE_OPTIONS", "--max-old-space-size=" + (isLowRam() ? 768 : 1536));
+        env.put("NODE_OPTIONS", "--max-old-space-size=" + v8HeapMb());
         if (!Prefs.telemetry(app)) env.put("DSH_TELEMETRY_DISABLED", "1");
         mkdirs(new File(env.get("HOME")));
 
@@ -356,13 +356,23 @@ public final class Engine {
         process = null;
         if (child != null) {
             LogStore.append("engine", "stopping engine");
+            long pid = processPid(child);
+            killDescendants(pid);
             child.destroy();
             try {
                 child.waitFor();
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             }
+            if (pid > 0) {
+                try {
+                    Os.kill((int) pid, 9);
+                } catch (Exception ignored) {
+                    // Already gone.
+                }
+            }
         }
+        killStaleDescendants();
         deletePid();
         url = null;
         readyAt = 0;
@@ -372,7 +382,11 @@ public final class Engine {
     private void fail(String reason, Throwable failure) {
         Process child = process;
         process = null;
-        if (child != null) child.destroy();
+        if (child != null) {
+            long pid = processPid(child);
+            killDescendants(pid);
+            child.destroy();
+        }
         deletePid();
         error = reason;
         LogStore.append("engine", "ERROR: " + reason);
@@ -411,7 +425,7 @@ public final class Engine {
         if (base == null) base = new File("/storage/emulated/0");
         File shared = new File(base, "DSH");
         try {
-            if (shared.isDirectory() || shared.mkdirs()) return shared;
+            if ((shared.isDirectory() || shared.mkdirs()) && isWritable(shared)) return shared;
         } catch (SecurityException ignored) {
             // Fall through to app storage.
         }
@@ -421,7 +435,19 @@ public final class Engine {
         } catch (IOException ignored) {
             // The caller reports an unusable workspace when the engine starts.
         }
+        LogStore.append("engine", "shared workspace unavailable, using " + fallback);
         return fallback;
+    }
+
+    private boolean isWritable(File dir) {
+        File probe = new File(dir, ".dsh-write-probe");
+        try {
+            if (probe.isFile() && !probe.delete()) return false;
+            if (!probe.createNewFile()) return false;
+            return probe.delete();
+        } catch (IOException | SecurityException error) {
+            return false;
+        }
     }
 
     public boolean hasAllFilesAccess() {
@@ -677,6 +703,7 @@ public final class Engine {
             String exe = readProc(pid, "exe");
             if (cmdline.contains("libnode.so") || exe.contains("libnode.so")) {
                 LogStore.append("engine", "killing stale node pid " + pid);
+                killDescendants(pid);
                 Os.kill(pid, 9);
             }
             deletePid();
@@ -684,6 +711,80 @@ public final class Engine {
             LogStore.append("engine", "stale pid check failed: " + error.getMessage());
             deletePid();
         }
+    }
+
+    /** Kill any descendants still holding the engine directory open. */
+    private void killStaleDescendants() {
+        File proc = new File("/proc");
+        File[] entries = proc.listFiles();
+        if (entries == null) return;
+        String enginePath = engineDir().getAbsolutePath();
+        for (File entry : entries) {
+            if (!entry.isDirectory()) continue;
+            String name = entry.getName();
+            if (name.isEmpty() || !Character.isDigit(name.charAt(0))) continue;
+            try {
+                int pid = Integer.parseInt(name);
+                if (pid == android.os.Process.myPid()) continue;
+                String cmdline = readProc(pid, "cmdline").replace('\0', ' ');
+                if (!cmdline.contains(enginePath) && !cmdline.contains("libnode.so")) continue;
+                LogStore.append("engine", "killing leftover pid " + pid);
+                killDescendants(pid);
+                Os.kill(pid, 9);
+            } catch (Exception ignored) {
+                // The process vanished or is not ours.
+            }
+        }
+    }
+
+    /**
+     * Node spawns bash, git and session helpers. Android does not reap the
+     * whole tree when the parent is destroyed, so walk /proc and kill it.
+     */
+    private void killDescendants(long pid) {
+        if (pid <= 0) return;
+        for (long child : childPids(pid)) {
+            killDescendants(child);
+            try {
+                Os.kill((int) child, 9);
+            } catch (Exception ignored) {
+                // Already gone.
+            }
+        }
+    }
+
+    private List<Long> childPids(long pid) {
+        List<Long> result = new ArrayList<>();
+        String children = readProc((int) pid, "task/" + pid + "/children").trim();
+        if (!children.isEmpty()) {
+            for (String part : children.split("\\s+")) {
+                try {
+                    result.add(Long.parseLong(part));
+                } catch (NumberFormatException ignored) {
+                    // Ignore malformed entries.
+                }
+            }
+            return result;
+        }
+        // Fallback for kernels that hide task/<pid>/children.
+        File[] entries = new File("/proc").listFiles();
+        if (entries == null) return result;
+        for (File entry : entries) {
+            if (!entry.isDirectory()) continue;
+            String name = entry.getName();
+            if (name.isEmpty() || !Character.isDigit(name.charAt(0))) continue;
+            try {
+                String stat = readProc(Integer.parseInt(name), "stat");
+                int close = stat.lastIndexOf(')');
+                if (close < 0) continue;
+                String[] fields = stat.substring(close + 2).split(" ");
+                if (fields.length < 2) continue;
+                if (Long.parseLong(fields[1]) == pid) result.add(Long.parseLong(name));
+            } catch (Exception ignored) {
+                // Process vanished between listing and reading.
+            }
+        }
+        return result;
     }
 
     private String readProc(int pid, String name) {
@@ -704,6 +805,29 @@ public final class Engine {
         android.app.ActivityManager manager =
                 (android.app.ActivityManager) app.getSystemService(Context.ACTIVITY_SERVICE);
         return manager != null && manager.isLowRamDevice();
+    }
+
+    /**
+     * V8's old space tracks physical RAM rather than a binary low-RAM flag: a
+     * 4 GB phone can comfortably keep a 1 GB heap, while 2 GB phones must stay
+     * small to avoid the LMK killing the engine mid-conversation.
+     */
+    private int v8HeapMb() {
+        long total = 0;
+        android.app.ActivityManager manager =
+                (android.app.ActivityManager) app.getSystemService(Context.ACTIVITY_SERVICE);
+        if (manager != null) {
+            android.app.ActivityManager.MemoryInfo info =
+                    new android.app.ActivityManager.MemoryInfo();
+            manager.getMemoryInfo(info);
+            total = info.totalMem;
+        }
+        long gb = Math.round(total / 1073741824.0);
+        if (gb >= 8) return 2048;
+        if (gb >= 6) return 1536;
+        if (gb >= 4) return 1024;
+        if (gb >= 3) return 768;
+        return 512;
     }
 
     // ------------------------------------------------------------------- io
