@@ -10,8 +10,8 @@ executed against the same payload and environment the app uses.
 
 | Check | Result |
 | --- | --- |
-| `apksigner verify` (v1/v2/v3) | pass; certificate SHA-256 `46f3451e…cbc0d` |
-| Manifest / package | `dev.dsh.android`, versionName 0.1.0, minSdk 24, target 36 |
+| `apksigner verify` | pass (v2); certificate SHA-256 `46f3451e…cbc0d` |
+| Manifest / package | `dev.dsh.android`, versionName 0.1.1, versionCode 2, minSdk 24, target 36 |
 | ZIP layout | manifest, `resources.arsc`, payload stored and 4-byte aligned |
 | Payload integrity | asset SHA-256 equals `dsh-engine.manifest.json` |
 | Payload contents | 26 native libs, `libbash.so`, `libgit.so`, `libgit-remote-http.so`, `git/templates` |
@@ -24,6 +24,7 @@ executed against the same payload and environment the app uses.
 | git HTTPS | `clone --depth 1 https://github.com/octocat/Hello-World.git` succeeds |
 | safe mode | backs up `cordis.patch.yml`, removes the original, exits 0 |
 | ELF checks | `$ORIGIN` RUNPATH on every copied library, Android-safe SONAMEs |
+| APK SHA-256 | `519ffca6…d07c84` |
 
 ## What was not verified
 
@@ -39,7 +40,7 @@ the checklist below as required before calling a build device-ready.
 ## Install
 
 ```sh
-adb install -r dist/DSH-Android-0.1.0.apk
+adb install -r dist/DSH-Android-0.1.1.apk
 # or copy the APK to the phone and open it
 ```
 
@@ -47,7 +48,7 @@ If an older build signed with a different key is installed:
 
 ```sh
 adb uninstall dev.dsh.android
-adb install dist/DSH-Android-0.1.0.apk
+adb install dist/DSH-Android-0.1.1.apk
 ```
 
 Watch logs while testing:
