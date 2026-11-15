@@ -51,6 +51,14 @@ account sign-in depends on, plus several long-running stability issues.
 - About screen diagnostics: WebView package/version, outbound HTTPS
   reachability, and live loopback engine status.
 
+### Build
+
+- The APK is signed with APK Signature Scheme v2 only, which is what
+  targetSdk 36 requires. `apksigner` is tried first; when it truncates large
+  output (seen on some Android/Termux runtimes), `scripts/sign-apk-v2.py`
+  writes the same v2 block directly and the result still verifies with the
+  official `apksigner`.
+
 ### Known limitations
 
 - Device-side installation and real account sign-in still need validation on
