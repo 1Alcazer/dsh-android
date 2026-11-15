@@ -79,10 +79,13 @@ public final class AboutActivity extends Activity {
                 + (engine.port() > 0 ? " · port " + engine.port() : ""));
         addValue(engineCard, "WebView", webViewVersion());
         TextView httpsValue = addValue(engineCard, "Outbound HTTPS", "checking…");
+        TextView engineTlsValue = addValue(engineCard, "Engine TLS",
+                engine.tlsStoreInfo() + " · " + engine.tlsProbeInfo());
         TextView loopbackValue = addValue(engineCard, "Engine endpoint",
                 engine.port() > 0 ? "http://127.0.0.1:" + engine.port() : "not running");
         content.addView(engineCard);
         checkHttps(httpsValue);
+        checkEngineTls(engineTlsValue);
         checkLoopback(loopbackValue);
 
         content.addView(section("Device"));
@@ -204,6 +207,28 @@ public final class AboutActivity extends Activity {
                 if (!isFinishing()) target.setText(text);
             });
         }, "dsh-net-check").start();
+    }
+
+    private void checkEngineTls(TextView target) {
+        // The engine has its own TLS stack; the app-level check above only
+        // proves that Android itself can reach the platform. Poll the engine's
+        // self-test so a broken trust store is visible here.
+        new Thread(() -> {
+            String result = engine.tlsStoreInfo() + " · " + engine.tlsProbeInfo();
+            for (int i = 0; i < 20 && !result.contains("probe "); i++) {
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                result = engine.tlsStoreInfo() + " · " + engine.tlsProbeInfo();
+            }
+            String text = result;
+            runOnUiThread(() -> {
+                if (!isFinishing()) target.setText(text);
+            });
+        }, "dsh-engine-tls").start();
     }
 
     private void checkLoopback(TextView target) {

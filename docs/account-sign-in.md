@@ -34,6 +34,24 @@ phone. No external redirect URI or custom scheme is involved.
   from the Play Store if it is old.
 - **Working HTTPS.** The sign-in page is on `platform.deepseek.com`. **About →
   Outbound HTTPS** checks `api.deepseek.com` and reports whether TLS works.
+- **A trust store the engine honours.** The bundled Node runtime has no
+  embedded CA list, and its OpenSSL looks for a host path that does not exist
+  on Android (`/etc/tls/cert.pem`). It also ignores `SSL_CERT_DIR`: only a
+  single PEM file is accepted, through `SSL_CERT_FILE` or
+  `NODE_EXTRA_CA_CERTS`. Before the engine starts, the app therefore merges
+  every readable CA source on the device (the Conscrypt/APEX store,
+  `/system/etc/security/cacerts`, user-added roots) into one cached PEM file
+  and exports it for Node, cURL and Git. A Mozilla bundle ships as an asset
+  for devices with no readable system store. Without a usable store every
+  engine request fails with `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`, which the
+  account plugin reports as `no-response` and the interface shows as
+  "Network error, please retry" (fixed in 0.1.3).
+- **Engine TLS self-test.** After the engine starts, it performs one request
+  against `https://api.deepseek.com/` with the exact environment it uses and
+  writes the outcome to the app log under the `tls` tag
+  (**More → Logs**). `probe … -> HTTP 401` means the handshake works;
+  `probe … -> FAILED UNABLE_TO_GET_ISSUER_CERT_LOCALLY` means the trust store
+  is missing.
 
 ## If sign-in does not complete
 

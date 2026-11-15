@@ -11,7 +11,7 @@ executed against the same payload and environment the app uses.
 | Check | Result |
 | --- | --- |
 | `apksigner verify` | pass (v2); certificate SHA-256 `46f3451e…cbc0d` |
-| Manifest / package | `dev.dsh.android`, versionName 0.1.2, versionCode 3, minSdk 24, target 36 |
+| Manifest / package | `dev.dsh.android`, versionName 0.1.3, versionCode 4, minSdk 24, target 36 |
 | ZIP layout | manifest, `resources.arsc`, payload stored and 4-byte aligned |
 | Payload integrity | asset SHA-256 equals `dsh-engine.manifest.json` |
 | Payload contents | 26 native libs, `libbash.so`, `libgit.so`, `libgit-remote-http.so`, `git/templates` |
@@ -24,7 +24,12 @@ executed against the same payload and environment the app uses.
 | git HTTPS | `clone --depth 1 https://github.com/octocat/Hello-World.git` succeeds |
 | safe mode | backs up `cordis.patch.yml`, removes the original, exits 0 |
 | ELF checks | `$ORIGIN` RUNPATH on every copied library, Android-safe SONAMEs |
-| APK SHA-256 | `ddb6c922b29bf441…7e596d` |
+| APK SHA-256 | `95b053f3b46469d2…0a30d2` |
+| TLS without a trust store | `fetch https://api.deepseek.com/` → `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` (the sign-in failure) |
+| TLS with the app trust store | same request → `HTTP 401` (handshake verified, 0.4 s) |
+| TLS with the shipped fallback bundle | same request → `HTTP 401` |
+| Account sign-in without a trust store | `account/startSignIn` → phase `failed`, errorCode `no-response` |
+| Account sign-in with the app trust store | phase `waiting-browser`, `authorizeUrl=https://platform.deepseek.com/dsh/authorize?authorize_id=…` |
 
 ## What was not verified
 
@@ -37,10 +42,36 @@ executed against the same payload and environment the app uses.
 The sandbox has no `adb`, no root, and no package-installer permission. Treat
 the checklist below as required before calling a build device-ready.
 
+## Reproducing the account sign-in check
+
+The account failure of 0.1.1/0.1.2 can be reproduced and verified without a
+phone, because the fault is in the engine's TLS stack, not in the WebView:
+
+```sh
+# payload and native libraries from engine/assemble-engine.mjs and
+# engine/assemble-native.mjs
+export DSH_NATIVE=<dir with libnode.so> DSH_PAYLOAD=<extracted payload>
+
+# 1. without a trust store: the engine cannot reach the platform
+node scripts/verify-account-signin.mjs - no-trust-store
+#   [engine] [deepseek-account] request failed { path: '/auth-api/v0/dsh/auth_init',
+#              errorCode: 'no-response' }
+#   RESULT(no-trust-store): sign-in FAILED ... "phase":"failed","errorCode":"no-response"
+
+# 2. with the trust store the app generates: the platform is reached
+node scripts/verify-account-signin.mjs /path/to/ca-bundle.pem app-trust-store
+#   [state] ..."phase":"waiting-browser",
+#           "authorizeUrl":"https://platform.deepseek.com/dsh/authorize?authorize_id=..."
+#   RESULT(app-trust-store): sign-in reached the browser stage with an authorize URL
+```
+
+The same script reproduces the browser stage the app uses, so a green run
+means the sign-in popup has a valid authorize URL to open.
+
 ## Install
 
 ```sh
-adb install -r dist/DSH-Android-0.1.2.apk
+adb install -r dist/DSH-Android-0.1.3.apk
 # or copy the APK to the phone and open it
 ```
 
@@ -48,7 +79,7 @@ If an older build signed with a different key is installed:
 
 ```sh
 adb uninstall dev.dsh.android
-adb install dist/DSH-Android-0.1.2.apk
+adb install dist/DSH-Android-0.1.3.apk
 ```
 
 Watch logs while testing:

@@ -8,7 +8,7 @@ stage DSH tree → fetch + verify debs → patch ELF → pack payload
               → aapt2 compile/link → javac → d8 → zip → apksigner
 ```
 
-The same pipeline was used to produce `dist/DSH-Android-0.1.2.apk` on-device.
+The same pipeline was used to produce `dist/DSH-Android-0.1.3.apk` on-device.
 
 ## Prerequisites
 
@@ -131,7 +131,7 @@ Stage by stage:
 Output:
 
 ```
-dist/DSH-Android-0.1.2.apk
+dist/DSH-Android-0.1.3.apk
 ```
 
 Environment overrides:
@@ -142,7 +142,7 @@ JAVA_HOME=/path/to/jdk
 AAPT2=/path/to/aapt2
 BUILD_TOOLS=/path/to/build-tools/36.0.0
 PLATFORM=/path/to/android-36/android.jar
-VERSION_NAME=0.1.2 VERSION_CODE=3 MIN_SDK=24 TARGET_SDK=36
+VERSION_NAME=0.1.3 VERSION_CODE=4 MIN_SDK=24 TARGET_SDK=36
 ```
 
 `package_apk.py` uses only the Python standard library and does not need

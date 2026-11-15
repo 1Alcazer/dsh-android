@@ -535,7 +535,12 @@ public final class MainActivity extends Activity implements Engine.Listener {
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
         settings.setUserAgentString(settings.getUserAgentString() + " DSH-Android/" + appVersion());
         if (Build.VERSION.SDK_INT >= 23) settings.setOffscreenPreRaster(true);
-        if (Build.VERSION.SDK_INT >= 26) settings.setSafeBrowsingEnabled(true);
+        if (Build.VERSION.SDK_INT >= 26) {
+            settings.setSafeBrowsingEnabled(true);
+            // Keep the renderer alive while the view is off-screen so returning
+            // to the app never re-rasterises the whole interface.
+            view.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
+        }
 
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);

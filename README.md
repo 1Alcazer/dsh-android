@@ -18,14 +18,14 @@ on any Linux host) without Gradle.
 
 Grab the signed APK from the latest release:
 
-- [**DSH-Android-0.1.2.apk**](https://github.com/1Alcazer/dsh-android/releases/download/v0.1.2/DSH-Android-0.1.2.apk) (123.7 MiB, arm64)
+- [**DSH-Android-0.1.3.apk**](https://github.com/1Alcazer/dsh-android/releases/download/v0.1.3/DSH-Android-0.1.3.apk) (123.9 MiB, arm64)
 - [All releases](https://github.com/1Alcazer/dsh-android/releases)
 
 Verify the download:
 
 ```sh
-sha256sum DSH-Android-0.1.2.apk
-# ddb6c922b29bf4410d0bcfd8bf08f7f7fb7973f582a10b82318e09abd67e596d
+sha256sum DSH-Android-0.1.3.apk
+# 95b053f3b46469d23ff78182292fc0e65e4464dd81f1a48df90e8a86760a30d2
 ```
 
 ## At a glance
@@ -33,16 +33,16 @@ sha256sum DSH-Android-0.1.2.apk
 | Item | Value |
 | --- | --- |
 | Package | `dev.dsh.android` |
-| Version | `0.1.2` (versionCode 3) |
+| Version | `0.1.3` (versionCode 4) |
 | DSH engine | `@deepseek-ai/dsh@0.2.2-rc.2` (official npm production tree) |
 | Node runtime | `26.13.1` (Termux aarch64) |
 | Shell | GNU bash `5.3.20` |
 | Version control | Git `2.56.1`, HTTPS remotes |
 | ABI | `arm64-v8a` |
 | Android | 7.0+ (minSdk 24), target/compile 36 |
-| APK | `dist/DSH-Android-0.1.2.apk` |
-| APK size | 129,737,593 bytes (123.7 MiB) |
-| APK SHA-256 | `ddb6c922b29bf4410d0bcfd8bf08f7f7fb7973f582a10b82318e09abd67e596d` |
+| APK | `dist/DSH-Android-0.1.3.apk` |
+| APK size | 129,863,033 bytes (123.9 MiB) |
+| APK SHA-256 | `95b053f3b46469d23ff78182292fc0e65e4464dd81f1a48df90e8a86760a30d2` |
 | Engine payload | 88,777,991 bytes, sha256 `62d6760d9215e0203ac8bb2fd87bae788b0c487424c1a4ccdf2195b2584f0bc1` |
 
 The APK in `dist/` is signed with a local development key. Its certificate
@@ -53,10 +53,14 @@ releases; Android will warn about installing from an unknown source.
 
 ## Status
 
-Preview release, published as a signed arm64 APK. 0.1.2 fixes outbound HTTPS trust for the bundled Node engine (the root cause of
-"Network error, please retry" during account sign-in on many devices) and
-improves WebView smoothness. It also includes the 0.1.1 popup, session, and
-stability fixes. See the [changelog](CHANGELOG.md) for the full list.
+Preview release, published as a signed arm64 APK. 0.1.3 repairs DeepSeek account
+sign-in: the bundled Node runtime has no embedded CA list, so the app now
+merges the device trust store into one PEM bundle and points the engine at it.
+Without that, every outbound request fails with
+`UNABLE_TO_GET_ISSUER_CERT_LOCALLY` and the interface reports
+"Network error, please retry" during sign-in. 0.1.3 also adds a TLS self-test
+to the app log and keeps the WebView renderer alive off-screen. See the
+[changelog](CHANGELOG.md) for the full list.
 
 The engine payload, bash, git, safe mode, and the loopback HTTP boot path were
 exercised end to end in the build sandbox, and the signature is verified with
@@ -107,7 +111,7 @@ Download the APK from the [latest release](https://github.com/1Alcazer/dsh-andro
 or build it yourself (see [Build](#build)) and use:
 
 ```sh
-adb install -r dist/DSH-Android-0.1.2.apk
+adb install -r dist/DSH-Android-0.1.3.apk
 ```
 
 Or copy the APK to the phone and open it. Allow installation from the file

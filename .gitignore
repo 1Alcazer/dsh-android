@@ -12,6 +12,7 @@ engine/cache/
 *.keystore
 *.jks
 .cache/
+.work/
 dsh-session/
 
 # Local agent/home files in this workspace (not part of the project)

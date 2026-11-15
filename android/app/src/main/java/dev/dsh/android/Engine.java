@@ -19,9 +19,11 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -57,6 +59,24 @@ public final class Engine {
     private static final String SAFE_MODE_SCRIPT =
             "node_modules/@deepseek-ai/dsh/dsh-android-safe-mode.mjs";
     private static final String PAYLOAD_MARKER = ".payload-sha256";
+    /** Hashed CA directories shipped by Android and its vendors. */
+    private static final String[] CA_DIRECTORIES = {
+            "/apex/com.android.conscrypt/cacerts",
+            "/system/etc/security/cacerts",
+            "/system/etc/security/cacerts_google",
+            "/data/misc/keychain/cacerts-added"
+    };
+    /** Single-file CA bundles some system images ship. */
+    private static final String[] CA_FILES = {
+            "/system/etc/security/cacerts.pem",
+            "/apex/com.android.conscrypt/cacerts/cacert.pem"
+    };
+    private static final String CERT_BEGIN = "-----BEGIN CERTIFICATE-----";
+    private static final String CERT_END = "-----END CERTIFICATE-----";
+    /** Rebuild the merged trust store at most once a month. */
+    private static final long CA_BUNDLE_MAX_AGE_MS = 30L * 24L * 60L * 60L * 1000L;
+    /** Endpoint used by the TLS self-test; any HTTP status proves the handshake. */
+    private static final String TLS_PROBE_URL = "https://api.deepseek.com/";
     private static final Pattern URL_PATTERN =
             Pattern.compile("dsh web: (https?://\\S+)");
     private static final Pattern ANSI = Pattern.compile("\u001B\\[[0-9;?]*[A-Za-z]");
@@ -87,6 +107,10 @@ public final class Engine {
     });
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
     private final AtomicInteger generation = new AtomicInteger();
+    /** Human-readable state of the trust store the engine runs with. */
+    private volatile String tlsStoreInfo = "not prepared yet";
+    /** Last line of the engine TLS self-test. */
+    private volatile String tlsProbeInfo = "not run yet";
 
     private volatile State state = State.IDLE;
     private volatile String message = "";
@@ -153,6 +177,16 @@ public final class Engine {
 
     public void removeListener(Listener listener) {
         listeners.remove(listener);
+    }
+
+    /** Description of the trust store the engine was started with. */
+    public String tlsStoreInfo() {
+        return tlsStoreInfo;
+    }
+
+    /** Result of the engine TLS self-test, or the state it is still in. */
+    public String tlsProbeInfo() {
+        return tlsProbeInfo;
     }
 
     /** Start the engine unless it is already starting or running. */
@@ -283,6 +317,8 @@ public final class Engine {
         process = child;
         writePid(child);
         child.getOutputStream().close();
+        // Prove with the same runtime and trust store that outbound TLS works.
+        runTlsProbe(env);
 
         Thread stdout = new Thread(() -> pump(child.getInputStream(), "stdout", token), "dsh-stdout");
         Thread stderr = new Thread(() -> pump(child.getErrorStream(), "stderr", token), "dsh-stderr");
@@ -809,48 +845,195 @@ public final class Engine {
     }
 
     /**
-     * Node/OpenSSL and Git need a trust store for outbound HTTPS. Android keeps
-     * system roots under /system/etc/security/cacerts; Termux-style bundles live
-     * elsewhere. Point the runtime at whichever path exists so sign-in and
-     * model-provider requests can verify TLS on a real device.
+     * Node/OpenSSL and Git need a trust store for outbound HTTPS.
+     *
+     * <p>The bundled Node has no embedded CA list (it was built for a host whose
+     * OpenSSL looks for {@code /etc/tls/cert.pem}), so every outbound request
+     * fails certificate verification with {@code UNABLE_TO_GET_ISSUER_CERT_LOCALLY}
+     * unless the runtime is pointed at a trust store. Android keeps its system
+     * roots as individual PEM files, and this build only honours a single PEM
+     * file through {@code SSL_CERT_FILE} / {@code NODE_EXTRA_CA_CERTS}; a
+     * directory hint such as {@code SSL_CERT_DIR} alone is ignored.
+     *
+     * <p>So the app merges every readable CA source on the device into one PEM
+     * bundle and points the engine at that file. This is what makes DeepSeek
+     * account sign-in (and every provider request) work on a real phone.
      */
     private void configureTlsTrust(Map<String, String> env) {
-        // Prefer an explicit bundle when present (Node's bundled OpenSSL reads
-        // SSL_CERT_FILE; NODE_EXTRA_CA_CERTS adds to Node's default roots).
-        String[] certFiles = {
-                "/system/etc/security/cacerts.pem",
-                "/apex/com.android.conscrypt/cacerts/cacert.pem",
-                "/data/data/com.termux/files/usr/etc/tls/cert.pem",
-                "/system/etc/tls/cert.pem",
-                "/etc/ssl/certs/ca-certificates.crt",
-                "/etc/pki/tls/certs/ca-bundle.crt"
-        };
-        for (String path : certFiles) {
+        File bundle = caBundleFile();
+        int certificates = buildCaBundle(bundle);
+        if (certificates > 0) {
+            String path = bundle.getAbsolutePath();
+            env.put("SSL_CERT_FILE", path);
+            env.put("NODE_EXTRA_CA_CERTS", path);
+            env.put("CURL_CA_BUNDLE", path);
+            env.put("GIT_SSL_CAINFO", path);
+            tlsStoreInfo = certificates + " certificates · " + path;
+            LogStore.append("tls", "trust store: " + certificates + " certificates -> " + path);
+        } else {
+            tlsStoreInfo = "no CA certificates found";
+            LogStore.append("tls", "no CA certificates found; outbound HTTPS will fail");
+        }
+        // The hashed directory is still useful for Git and for tools that read
+        // the system store directly.
+        for (String dir : CA_DIRECTORIES) {
+            File file = new File(dir);
+            if (file.isDirectory() && file.canRead()) {
+                env.putIfAbsent("SSL_CERT_DIR", dir);
+                env.putIfAbsent("GIT_SSL_CAPATH", dir);
+                break;
+            }
+        }
+    }
+
+    /** Where the merged trust store is cached between runs. */
+    private File caBundleFile() {
+        File dir = new File(app.getFilesDir(), "tls");
+        try {
+            mkdirs(dir);
+        } catch (IOException error) {
+            LogStore.append("tls", "cannot create trust store directory: " + error.getMessage());
+        }
+        return new File(dir, "ca-bundle.pem");
+    }
+
+    /**
+     * Merge every readable CA source into one PEM file.
+     *
+     * @param target bundle to write
+     * @return number of certificates in the bundle, or zero when none were found
+     */
+    private int buildCaBundle(File target) {
+        List<File> sources = new ArrayList<>();
+        long newest = 0L;
+        for (String dir : CA_DIRECTORIES) {
+            File[] files = new File(dir).listFiles();
+            if (files == null) continue;
+            for (File file : files) {
+                if (!file.isFile() || !file.canRead()) continue;
+                sources.add(file);
+                newest = Math.max(newest, file.lastModified());
+            }
+        }
+        for (String path : CA_FILES) {
             File file = new File(path);
             if (file.isFile() && file.canRead()) {
-                env.putIfAbsent("SSL_CERT_FILE", path);
-                env.putIfAbsent("NODE_EXTRA_CA_CERTS", path);
-                env.putIfAbsent("CURL_CA_BUNDLE", path);
-                env.putIfAbsent("GIT_SSL_CAINFO", path);
-                break;
+                sources.add(file);
+                newest = Math.max(newest, file.lastModified());
             }
         }
-        String[] certDirs = {
-                "/system/etc/security/cacerts",
-                "/apex/com.android.conscrypt/cacerts",
-                "/data/data/com.termux/files/usr/etc/tls/certs",
-                "/system/etc/security/cacerts_google"
-        };
-        for (String path : certDirs) {
-            File dir = new File(path);
-            if (dir.isDirectory() && dir.canRead()) {
-                env.putIfAbsent("SSL_CERT_DIR", path);
-                env.putIfAbsent("GIT_SSL_CAPATH", path);
-                break;
-            }
+        // A cached bundle is reused until the system store changes underneath it.
+        if (target.isFile() && target.length() > 1024L && target.lastModified() >= newest
+                && System.currentTimeMillis() - target.lastModified() < CA_BUNDLE_MAX_AGE_MS) {
+            return countCertificates(readTextQuietly(target));
         }
-        if (!env.containsKey("SSL_CERT_FILE") && !env.containsKey("SSL_CERT_DIR")) {
-            LogStore.append("engine", "no system CA store found; outbound TLS may fail");
+        Set<String> seen = new HashSet<>();
+        StringBuilder bundle = new StringBuilder();
+        int count = 0;
+        for (File source : sources) {
+            count = appendCertificates(bundle, seen, readTextQuietly(source), count);
+        }
+        if (count == 0) {
+            // Fall back to the Mozilla bundle shipped with the application.
+            count = appendCertificates(bundle, seen, readAssetQuietly("ca-bundle.pem"), count);
+        }
+        if (count == 0) return 0;
+        try {
+            File temp = new File(target.getParentFile(), target.getName() + ".tmp");
+            writeText(temp, bundle.toString());
+            if (!temp.renameTo(target)) {
+                writeText(target, bundle.toString());
+                temp.delete();
+            }
+        } catch (IOException error) {
+            LogStore.append("tls", "cannot write trust store: " + error.getMessage());
+            return 0;
+        }
+        return count;
+    }
+
+    /** Append every not-yet-seen certificate of a PEM text to the bundle. */
+    private int appendCertificates(StringBuilder bundle, Set<String> seen, String text, int count) {
+        if (text == null || text.isEmpty()) return count;
+        int index = 0;
+        while (true) {
+            int begin = text.indexOf(CERT_BEGIN, index);
+            if (begin < 0) break;
+            int end = text.indexOf(CERT_END, begin);
+            if (end < 0) break;
+            String pem = text.substring(begin, end + CERT_END.length());
+            index = end + CERT_END.length();
+            if (!seen.add(pem)) continue;
+            bundle.append(pem).append('\n');
+            count++;
+        }
+        return count;
+    }
+
+    private int countCertificates(String text) {
+        if (text == null || text.isEmpty()) return 0;
+        int count = 0;
+        int index = text.indexOf(CERT_BEGIN);
+        while (index >= 0) {
+            count++;
+            index = text.indexOf(CERT_BEGIN, index + CERT_BEGIN.length());
+        }
+        return count;
+    }
+
+    private String readTextQuietly(File file) {
+        try {
+            return readText(file);
+        } catch (IOException error) {
+            return "";
+        }
+    }
+
+    private String readAssetQuietly(String name) {
+        try (InputStream in = app.getAssets().open(name)) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException error) {
+            return "";
+        }
+    }
+
+    /**
+     * Verify with the bundled Node that a real TLS handshake succeeds.
+     *
+     * <p>The result is written to the app log so a failed sign-in can be told
+     * apart from a broken trust store without attaching a debugger.
+     */
+    private void runTlsProbe(Map<String, String> engineEnv) {
+        try {
+            File script = new File(app.getFilesDir(), "tls-probe.mjs");
+            if (!script.isFile()) {
+                try (InputStream in = app.getAssets().open("tls-probe.mjs")) {
+                    writeText(script, new String(in.readAllBytes(), StandardCharsets.UTF_8));
+                }
+            }
+            File node = new File(app.getApplicationInfo().nativeLibraryDir, "libnode.so");
+            if (!node.isFile() || !script.isFile()) return;
+            ProcessBuilder builder = new ProcessBuilder(node.getAbsolutePath(),
+                    script.getAbsolutePath(), TLS_PROBE_URL);
+            builder.environment().putAll(engineEnv);
+            builder.redirectErrorStream(true);
+            Process process = builder.start();
+            tlsProbeInfo = "running…";
+            Thread reader = new Thread(() -> {
+                try (BufferedReader in = new BufferedReader(new InputStreamReader(
+                        process.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = in.readLine()) != null) {
+                        LogStore.append("tls", line);
+                        tlsProbeInfo = line;
+                    }
+                } catch (IOException ignored) {
+                    // The probe is best-effort diagnostics.
+                }
+            }, "dsh-tls-probe");
+            reader.start();
+        } catch (Throwable error) {
+            LogStore.append("tls", "probe failed: " + error);
         }
     }
 

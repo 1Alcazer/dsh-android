@@ -5,6 +5,36 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.3] - 2026-11-15
+
+Repairs DeepSeek account sign-in for real: the engine's outbound HTTPS now has
+a trust store it actually honours, and every device gets a verifiable
+self-test of it.
+
+### Fixed
+
+- **Account sign-in ("Network error, please retry").** The bundled Node has no
+  embedded CA list and its OpenSSL was pointed at a host path that does not
+  exist on Android (`/etc/tls/cert.pem`), so *every* outbound request failed
+  with `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`. The engine turned that into the
+  `no-response` account error, which the interface shows as a network error
+  during sign-in. 0.1.2 only exported `SSL_CERT_DIR`, which this build ignores;
+  the runtime only accepts a single PEM file. The app now merges every
+  readable CA source on the device (Conscrypt/APEX store, `/system` store,
+  user store) into one cached PEM bundle and exports `SSL_CERT_FILE`,
+  `NODE_EXTRA_CA_CERTS`, `CURL_CA_BUNDLE` and `GIT_SSL_CAINFO`; a Mozilla
+  bundle ships as an asset for devices with no readable system store.
+- **Trust-store diagnostics.** The engine runs a TLS self-test against
+  `https://api.deepseek.com/` with the exact environment the engine uses and
+  writes the result to the app log (`tls` tag), so a failed sign-in can be
+  classified without a debugger.
+
+### Changed
+
+- **Smoother shell.** The WebView renderer is kept alive while off-screen
+  (`setRendererPriorityPolicy`), on top of the hardware layer, offscreen
+  pre-raster, and the mobile CSS polish from 0.1.2.
+
 ## [0.1.2] - 2026-11-15
 
 Fixes outbound connectivity for the bundled Node engine and improves the
