@@ -99,14 +99,14 @@ async function rpc(endpoint, payload) {
 const client = { version: '0.2.2-rc.2', locale: 'en', timezoneOffsetSeconds: 0 };
 await rpc('account/startSignIn', { args: { client, callbackOrigin: origin, loginSource: 'web' } });
 
+let reached = false;
 for (let attempt = 0; attempt < 30; attempt++) {
   await new Promise((resolve) => setTimeout(resolve, 1000));
   const state = await rpc('account/getState', { args: {} });
   console.log(`[state] ${state.slice(0, 400)}`);
   if (state.includes('authorizeUrl')) {
-    console.log(`RESULT(${label}): sign-in reached the browser stage with an authorize URL`);
-    child.kill('SIGKILL');
-    process.exit(0);
+    reached = true;
+    break;
   }
   if (state.includes('"phase":"failed"') || state.includes('"phase":"expired"')) {
     console.log(`RESULT(${label}): sign-in FAILED -> ${state.slice(0, 300)}`);
@@ -115,6 +115,19 @@ for (let attempt = 0; attempt < 30; attempt++) {
   }
 }
 
-console.log(`RESULT(${label}): sign-in did not settle in time`);
+if (!reached) {
+  console.log(`RESULT(${label}): sign-in did not settle in time`);
+  child.kill('SIGKILL');
+  process.exit(2);
+}
+
+// The platform redirects the popup straight to the loopback callback. The
+// engine's session cookie is SameSite=Strict, so that cross-site request does
+// not carry it; the route still has to be reachable without a cookie.
+const anonymous = await fetch(`${origin}/oauth/callback?code=test&state=test`, { redirect: 'manual' });
+console.log(`[callback] without session cookie -> HTTP ${anonymous.status}`
+  + (anonymous.status === 401 ? ' (cookie-gated, sign-in could not complete)' : ' (route reached)'));
+
+console.log(`RESULT(${label}): sign-in reached the browser stage with an authorize URL`);
 child.kill('SIGKILL');
-process.exit(2);
+process.exit(anonymous.status === 401 ? 3 : 0);

@@ -30,6 +30,7 @@ executed against the same payload and environment the app uses.
 | TLS with the shipped fallback bundle | same request → `HTTP 401` |
 | Account sign-in without a trust store | `account/startSignIn` → phase `failed`, errorCode `no-response` |
 | Account sign-in with the app trust store | phase `waiting-browser`, `authorizeUrl=https://platform.deepseek.com/dsh/authorize?authorize_id=…` |
+| OAuth callback without a session cookie | HTTP 400 (route reached, not cookie-gated) — the platform redirect completes even though the engine cookie is `SameSite=Strict` |
 
 ## What was not verified
 
@@ -62,6 +63,7 @@ node scripts/verify-account-signin.mjs - no-trust-store
 node scripts/verify-account-signin.mjs /path/to/ca-bundle.pem app-trust-store
 #   [state] ..."phase":"waiting-browser",
 #           "authorizeUrl":"https://platform.deepseek.com/dsh/authorize?authorize_id=..."
+#   [callback] without session cookie -> HTTP 400 (route reached)
 #   RESULT(app-trust-store): sign-in reached the browser stage with an authorize URL
 ```
 
